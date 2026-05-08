@@ -395,16 +395,33 @@ configure_server() {
   echo ""
   echo -e "${BOLD}  Configurações básicas:${NC}"
 
-  local max_players gamemode difficulty
+  local max_players gamemode difficulty offline_mode whitelist_mode
   ask "Máximo de jogadores" "20" max_players
   ask "Modo de jogo (survival/creative/adventure)" "survival" gamemode
   ask "Dificuldade (peaceful/easy/normal/hard)" "normal" difficulty
+
+  echo ""
+  echo -e "  ${YELLOW}${BOLD}Minecraft original (conta paga)?${NC}"
+  echo "  Responda 'n' se você e seus amigos usam conta gratuita/cracked."
+  ask "Todos têm Minecraft original? (s/n)" "n" offline_mode
+
+  local online_mode_val="true"
+  if [ "$offline_mode" != "s" ] && [ "$offline_mode" != "S" ]; then
+    online_mode_val="false"
+    echo ""
+    p_warn "Modo offline ativado (online-mode=false)"
+    echo ""
+    echo -e "  ${YELLOW}Atenção:${NC} sem autenticação, qualquer pessoa com o endereço pode entrar."
+    echo "  Recomendado ativar whitelist para restringir apenas aos seus amigos."
+    ask "Ativar whitelist? (s/n)" "s" whitelist_mode
+  fi
 
   # server.properties
   if [ ! -f server.properties ]; then
     cat > server.properties << EOF
 server-port=25565
 online-mode=true
+white-list=false
 spawn-protection=16
 view-distance=10
 simulation-distance=8
@@ -413,7 +430,7 @@ EOF
   fi
 
   # Update values
-  for kv in "max-players=$max_players" "gamemode=$gamemode" "difficulty=$difficulty"; do
+  for kv in "max-players=$max_players" "gamemode=$gamemode" "difficulty=$difficulty" "online-mode=$online_mode_val"; do
     local k="${kv%%=*}" v="${kv#*=}"
     if grep -q "^${k}=" server.properties; then
       sed -i "s/^${k}=.*/${k}=${v}/" server.properties
@@ -421,6 +438,32 @@ EOF
       echo "${k}=${v}" >> server.properties
     fi
   done
+
+  # Whitelist
+  if [ "${whitelist_mode:-n}" = "s" ] || [ "${whitelist_mode:-n}" = "S" ]; then
+    sed -i "s/^white-list=.*/white-list=true/" server.properties 2>/dev/null || echo "white-list=true" >> server.properties
+    p_ok "Whitelist ativada"
+
+    echo ""
+    echo -e "  ${BOLD}Adicionar jogadores à whitelist:${NC}"
+    echo "  Digite um nome por linha. Enter em branco para terminar."
+
+    local whitelist_entries="[]"
+    while true; do
+      local pname=""
+      ask "  Nome do jogador (Enter para terminar)" "" pname
+      [ -z "$pname" ] && break
+      whitelist_entries=$(echo "$whitelist_entries" | jq --arg n "$pname" '. + [{"uuid":"00000000-0000-0000-0000-000000000000","name":$n}]')
+      p_ok "  $pname adicionado"
+    done
+
+    echo "$whitelist_entries" | jq '.' > whitelist.json
+    p_ok "whitelist.json criado ($(echo "$whitelist_entries" | jq 'length') jogadores)"
+    echo ""
+    p_info "Para adicionar mais jogadores depois, use o console do servidor:"
+    p_info "  /whitelist add NomeDoJogador"
+    p_info "  /whitelist reload"
+  fi
 
   # JVM flags (Aikar's flags)
   local jvm_flags="-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 \
@@ -644,10 +687,18 @@ print_summary() {
   echo ""
   echo -e "  ${CYAN}3. Seus amigos se conectam com o endereço do playit.gg${NC}"
   echo ""
-  echo -e "${BOLD}  ── Mods no cliente ─────────────────────────────────────${NC}"
+  echo -e "${BOLD}  ── Launcher para os amigos (sem Minecraft original) ────${NC}"
   echo ""
-  echo -e "  Seus amigos precisam instalar o mesmo modpack no CurseForge App:"
-  echo -e "  https://www.curseforge.com/download/app"
+  echo -e "  Use o ${CYAN}PrismLauncher${NC} — gratuito, open source, suporta modpacks CurseForge."
+  echo ""
+  echo -e "  ${CYAN}1. Baixar PrismLauncher:${NC}  https://prismlauncher.org/download/"
+  echo -e "  ${CYAN}2. Na tela de login:${NC}  clique em 'Offline' e escolha um nome de usuário"
+  echo -e "  ${CYAN}3. Adicionar modpack:${NC}  'Add Instance' → 'CurseForge' → buscar '$SELECTED_MOD_NAME'"
+  echo -e "     (precisa de API key gratuita do CurseForge — igual à usada no servidor)"
+  echo -e "  ${CYAN}4. Conectar:${NC}  Multiplayer → Direct Connect → endereço do playit.gg"
+  echo ""
+  echo -e "  ${YELLOW}Atenção:${NC} todos devem usar o mesmo nome de usuário sempre,"
+  echo -e "  caso contrário o inventário/progresso não é mantido."
   echo ""
 }
 
